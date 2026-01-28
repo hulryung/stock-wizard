@@ -248,12 +248,22 @@ export async function analyzeNewsForStocks(
       return { recommendations: [] };
     }
 
-    // Attach news value to recommendations
     const recommendationsWithValue: RecommendationWithNewsValue[] = 
-      validation.data.recommendations.slice(0, MAX_RECOMMENDATIONS).map(rec => ({
-        ...rec,
-        newsValue: newsValueMap.get(rec.newsHeadline),
-      }));
+      validation.data.recommendations.slice(0, MAX_RECOMMENDATIONS).map(rec => {
+        let matchedValue = newsValueMap.get(rec.newsHeadline);
+        
+        if (!matchedValue) {
+          for (const [headline, value] of newsValueMap.entries()) {
+            if (rec.newsHeadline.includes(headline.slice(0, 30)) || 
+                headline.includes(rec.newsHeadline.slice(0, 30))) {
+              matchedValue = value;
+              break;
+            }
+          }
+        }
+        
+        return { ...rec, newsValue: matchedValue };
+      });
 
     return { recommendations: recommendationsWithValue };
   } catch (error) {
