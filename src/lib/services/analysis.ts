@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { getOpenAI } from '@/lib/openai';
 import { CONTRARIAN_SYSTEM_PROMPT } from '@/lib/prompts/contrarian';
 import { evaluateNewsValue, EvaluatedNews } from './newsEvaluation';
-import { NewsItem } from './news';
 import { NewsValue } from '@/types/database';
 
 const ReasoningStepSchema = z.object({
@@ -202,7 +201,7 @@ export async function analyzeNewsForStocks(
 
   if (!options?.skipEvaluation) {
     console.log(`[Analysis] Stage 1: Evaluating ${newsItems.length} news items...`);
-    evaluatedNews = await evaluateNewsValue(newsItems as NewsItem[]);
+    evaluatedNews = await evaluateNewsValue(newsItems);
     
     // Sort by overall_score and take top N
     evaluatedNews.sort((a, b) => b.value.overall_score - a.value.overall_score);

@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { getOpenAI } from '@/lib/openai';
 import { NEWS_VALUE_SYSTEM_PROMPT, buildNewsValuePrompt } from '@/lib/prompts/newsValue';
 import { NewsValue } from '@/types/database';
-import { NewsItem } from './news';
+
+export interface SimpleNewsItem {
+  headline: string;
+  summary?: string;
+}
 
 const NewsValueSchema = z.object({
   market_impact: z.number().min(0).max(1),
@@ -21,12 +25,12 @@ const EvaluationOutputSchema = z.object({
   evaluations: z.array(EvaluationSchema),
 });
 
-export interface EvaluatedNews extends NewsItem {
+export interface EvaluatedNews extends SimpleNewsItem {
   value: NewsValue;
 }
 
 export async function evaluateNewsValue(
-  newsItems: NewsItem[]
+  newsItems: SimpleNewsItem[]
 ): Promise<EvaluatedNews[]> {
   if (newsItems.length === 0) {
     return [];
@@ -95,7 +99,7 @@ function getDefaultValue(): NewsValue {
   };
 }
 
-function applyDefaultValues(newsItems: NewsItem[]): EvaluatedNews[] {
+function applyDefaultValues(newsItems: SimpleNewsItem[]): EvaluatedNews[] {
   return newsItems.map((item) => ({
     ...item,
     value: getDefaultValue(),
