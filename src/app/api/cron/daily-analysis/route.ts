@@ -68,7 +68,13 @@ export async function GET(request: NextRequest) {
         reasoning_chain: rec.reasoningChain,
         connection_summary: rec.connectionSummary,
         confidence_score: rec.confidenceScore,
-        price_at_recommendation: price?.price ?? null
+        price_at_recommendation: price?.price ?? null,
+        news_market_impact: rec.newsValue?.market_impact,
+        news_unexpectedness: rec.newsValue?.unexpectedness,
+        news_contrarian_potential: rec.newsValue?.contrarian_potential,
+        news_overall_score: rec.newsValue?.overall_score,
+        news_value_label: rec.newsValue?.value_label,
+        news_evaluation_reason: rec.newsValue?.evaluation_reason,
       });
 
       if (saved) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, Badge } from '@/components';
+import { Card, Badge, NewsValueBadge } from '@/components';
 import type { Recommendation } from '@/types/database';
 
 interface RecommendationCardProps {
@@ -18,7 +18,15 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps) 
   return (
     <Card hoverable onClick={() => setExpanded(!expanded)}>
       <div className="flex items-start justify-between mb-3">
-        <Badge market={recommendation.market} />
+        <div className="flex items-center gap-2">
+          <Badge market={recommendation.market} />
+          {recommendation.news_value_label && (
+            <NewsValueBadge 
+              label={recommendation.news_value_label} 
+              score={recommendation.news_overall_score}
+            />
+          )}
+        </div>
         {confidencePercent && (
           <span className="text-sm text-gray-500">신뢰도 {confidencePercent}%</span>
         )}
@@ -62,6 +70,11 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps) 
             <p className="text-sm text-gray-700">
               <span className="font-medium">요약:</span> {recommendation.connection_summary}
             </p>
+            {recommendation.news_evaluation_reason && (
+              <p className="text-sm text-gray-500 mt-2">
+                <span className="font-medium">뉴스 가치:</span> {recommendation.news_evaluation_reason}
+              </p>
+            )}
             {recommendation.price_at_recommendation && (
               <p className="text-sm text-gray-500 mt-2">
                 추천 당시 가격: {recommendation.market === 'KR' ? '₩' : '$'}

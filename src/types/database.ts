@@ -6,6 +6,15 @@ export interface ReasoningStep {
   connection: string;
 }
 
+export interface NewsValue {
+  market_impact: number;      // 0-1: 시장 영향력
+  unexpectedness: number;     // 0-1: 희소성/의외성
+  contrarian_potential: number; // 0-1: 역발상 적합도
+  overall_score: number;      // 0-1: 종합 점수
+  value_label: 'hot' | 'notable' | 'normal'; // UI 표시용
+  evaluation_reason: string;  // 평가 근거
+}
+
 export interface Recommendation {
   id: string;
   created_at: string;
@@ -19,6 +28,12 @@ export interface Recommendation {
   connection_summary: string;
   confidence_score: number | null;
   price_at_recommendation: number | null;
+  news_market_impact?: number;
+  news_unexpectedness?: number;
+  news_contrarian_potential?: number;
+  news_overall_score?: number;
+  news_value_label?: 'hot' | 'notable' | 'normal';
+  news_evaluation_reason?: string;
 }
 
 export interface NewsSource {
