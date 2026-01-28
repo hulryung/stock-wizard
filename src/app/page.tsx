@@ -1,8 +1,9 @@
 import { Container, Badge } from '@/components';
 import { RecommendationCard } from '@/components/recommendations';
 import { getTodayRecommendations } from '@/lib/services/recommendations';
-import type { Market } from '@/types/database';
+import type { Market, Recommendation } from '@/types/database';
 import { format } from 'date-fns';
+import { createClient } from '@supabase/supabase-js';
 
 interface PageProps {
   searchParams: Promise<{ market?: string }>;
@@ -14,9 +15,27 @@ export default async function HomePage({ searchParams }: PageProps) {
   const params = await searchParams;
   const marketFilter = params.market as Market | undefined;
   
-  const recommendations = await getTodayRecommendations(marketFilter);
-  const debugDate = new Date().toISOString();
   const queryDate = format(new Date(), 'yyyy-MM-dd');
+  const debugDate = new Date().toISOString();
+  
+  // Direct query for debugging
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  
+  let query = supabase
+    .from('recommendations')
+    .select('*')
+    .eq('analysis_date', queryDate)
+    .order('confidence_score', { ascending: false });
+
+  if (marketFilter) {
+    query = query.eq('market', marketFilter);
+  }
+
+  const { data: recommendations, error } = await query as { data: Recommendation[] | null, error: unknown };
+  const debugError = error ? String(error) : 'none';
 
   return (
     <Container>
@@ -44,7 +63,7 @@ export default async function HomePage({ searchParams }: PageProps) {
       </section>
 
       {/* Debug: Server date */}
-      <p className="text-xs text-gray-400 mb-2">Server: {debugDate} | Query date: {queryDate} | Count: {recommendations.length}</p>
+      <p className="text-xs text-gray-400 mb-2">Server: {debugDate} | Query: {queryDate} | Count: {recommendations?.length || 0} | Err: {debugError}</p>
       
       <section className="space-y-4">
         {recommendations.length > 0 ? (
