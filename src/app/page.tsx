@@ -1,6 +1,5 @@
 import { Container, Badge } from '@/components';
 import { RecommendationCard } from '@/components/recommendations';
-import { getTodayRecommendations } from '@/lib/services/recommendations';
 import type { Market, Recommendation } from '@/types/database';
 import { format } from 'date-fns';
 import { createClient } from '@supabase/supabase-js';
