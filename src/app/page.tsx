@@ -65,7 +65,7 @@ export default async function HomePage({ searchParams }: PageProps) {
       <p className="text-xs text-gray-400 mb-2">Server: {debugDate} | Query: {queryDate} | Count: {recommendations?.length || 0} | Err: {debugError}</p>
       
       <section className="space-y-4">
-        {recommendations.length > 0 ? (
+        {recommendations && recommendations.length > 0 ? (
           recommendations.map((rec) => (
             <RecommendationCard key={rec.id} recommendation={rec} />
           ))
