@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 
 export async function getTodayRecommendations(market?: Market): Promise<Recommendation[]> {
   const today = format(new Date(), 'yyyy-MM-dd');
+  console.log('[DEBUG] getTodayRecommendations - today:', today);
   
   let query = getSupabase()
     .from('recommendations')
@@ -16,6 +17,7 @@ export async function getTodayRecommendations(market?: Market): Promise<Recommen
   }
 
   const { data, error } = await query;
+  console.log('[DEBUG] getTodayRecommendations - data count:', data?.length, 'error:', error);
 
   if (error) {
     console.error('Error fetching recommendations:', error);
