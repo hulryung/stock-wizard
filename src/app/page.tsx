@@ -14,6 +14,7 @@ export default async function HomePage({ searchParams }: PageProps) {
   const marketFilter = params.market as Market | undefined;
   
   const recommendations = await getTodayRecommendations(marketFilter);
+  const debugDate = new Date().toISOString();
 
   return (
     <Container>
@@ -40,6 +41,9 @@ export default async function HomePage({ searchParams }: PageProps) {
         </div>
       </section>
 
+      {/* Debug: Server date */}
+      <p className="text-xs text-gray-400 mb-2">Server: {debugDate} | Count: {recommendations.length}</p>
+      
       <section className="space-y-4">
         {recommendations.length > 0 ? (
           recommendations.map((rec) => (
