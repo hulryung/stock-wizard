@@ -6,7 +6,7 @@ import { getStockPrice } from '@/lib/services/stocks';
 import { saveRecommendation, checkAnalysisExists } from '@/lib/services/recommendations';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');

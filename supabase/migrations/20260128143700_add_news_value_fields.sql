@@ -15,7 +15,15 @@ ADD COLUMN IF NOT EXISTS news_evaluation_reason TEXT;
 CREATE INDEX IF NOT EXISTS idx_recommendations_news_score 
 ON recommendations (news_overall_score DESC NULLS LAST);
 
--- Add check constraint for value_label
-ALTER TABLE recommendations
-ADD CONSTRAINT IF NOT EXISTS chk_news_value_label 
-CHECK (news_value_label IS NULL OR news_value_label IN ('hot', 'notable', 'normal'));
+-- Add check constraint for value_label (skip if exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_news_value_label'
+  ) THEN
+    ALTER TABLE recommendations
+    ADD CONSTRAINT chk_news_value_label 
+    CHECK (news_value_label IS NULL OR news_value_label IN ('hot', 'notable', 'normal'));
+  END IF;
+END
+$$;
