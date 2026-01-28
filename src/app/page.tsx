@@ -17,23 +17,17 @@ export default async function HomePage({ searchParams }: PageProps) {
   const queryDate = format(new Date(), 'yyyy-MM-dd');
   const debugDate = new Date().toISOString();
   
-  // Direct query for debugging
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
   
-  let query = supabase
+  const { data: recommendations, error } = await supabase
     .from('recommendations')
     .select('*')
     .eq('analysis_date', queryDate)
-    .order('confidence_score', { ascending: false });
-
-  if (marketFilter) {
-    query = query.eq('market', marketFilter);
-  }
-
-  const { data: recommendations, error } = await query as { data: Recommendation[] | null, error: unknown };
+    .limit(20) as { data: Recommendation[] | null, error: unknown };
+  
   const debugError = error ? String(error) : 'none';
 
   return (
