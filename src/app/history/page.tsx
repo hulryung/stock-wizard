@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from 'next/cache';
 import { Container, Badge, Card } from '@/components';
 import { getRecommendationsWithPerformance } from '@/lib/services/recommendations';
 import type { Market, RecommendationWithPerformance } from '@/types/database';
@@ -11,8 +12,12 @@ interface PageProps {
 const ITEMS_PER_PAGE = 20;
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export default async function HistoryPage({ searchParams }: PageProps) {
+  noStore();
+  
   const params = await searchParams;
   const page = parseInt(params.page || '1', 10);
   const marketFilter = params.market as Market | undefined;

@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from 'next/cache';
 import { Container, Badge } from '@/components';
 import { RecommendationCard } from '@/components/recommendations';
 import { getTodayRecommendations } from '@/lib/services/recommendations';
@@ -8,8 +9,12 @@ interface PageProps {
 }
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export default async function HomePage({ searchParams }: PageProps) {
+  noStore();
+  
   const params = await searchParams;
   const marketFilter = params.market as Market | undefined;
   
