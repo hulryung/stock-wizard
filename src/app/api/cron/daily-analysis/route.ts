@@ -76,7 +76,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, count: savedCount });
+    return NextResponse.json({ 
+      success: true, 
+      count: savedCount,
+      debug: {
+        usNewsCount: usNews.length,
+        krNewsCount: krNews.length,
+        usRecommendations: usAnalysis.recommendations.length,
+        krRecommendations: krAnalysis.recommendations.length,
+        totalToSave: allRecommendations.length
+      }
+    });
   } catch (error) {
     console.error('Daily analysis error:', error);
     return NextResponse.json({ error: 'Analysis failed' }, { status: 500 });
