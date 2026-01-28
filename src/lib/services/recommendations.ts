@@ -4,20 +4,18 @@ import { format } from 'date-fns';
 
 export async function getTodayRecommendations(market?: Market): Promise<Recommendation[]> {
   const today = format(new Date(), 'yyyy-MM-dd');
-  console.log('[DEBUG] getTodayRecommendations - today:', today);
   
   let query = getSupabase()
     .from('recommendations')
     .select('*')
     .eq('analysis_date', today)
-    .order('confidence_score', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (market) {
     query = query.eq('market', market);
   }
 
   const { data, error } = await query;
-  console.log('[DEBUG] getTodayRecommendations - data count:', data?.length, 'error:', error);
 
   if (error) {
     console.error('Error fetching recommendations:', error);
