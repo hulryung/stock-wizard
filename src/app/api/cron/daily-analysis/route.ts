@@ -6,6 +6,7 @@ import { getStockPrice } from '@/lib/services/stocks';
 import { saveRecommendation, checkAnalysisExists } from '@/lib/services/recommendations';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -19,11 +20,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log('[DEBUG] Starting news fetch...');
     const [usNews, krNews] = await Promise.all([
       fetchMarketNews('general'),
       fetchKoreanNews('경제 산업 기업 뉴스')
     ]);
+    console.log('[DEBUG] US News count:', usNews.length);
+    console.log('[DEBUG] KR News count:', krNews.length);
 
+    console.log('[DEBUG] Starting analysis...');
     const [usAnalysis, krAnalysis] = await Promise.all([
       analyzeNewsForStocks(
         usNews.slice(0, 10).map((news) => ({
@@ -40,11 +45,14 @@ export async function GET(request: NextRequest) {
         'KR'
       )
     ]);
+    console.log('[DEBUG] US Analysis:', usAnalysis.recommendations.length);
+    console.log('[DEBUG] KR Analysis:', krAnalysis.recommendations.length);
 
     const allRecommendations = [
       ...usAnalysis.recommendations,
       ...krAnalysis.recommendations
     ];
+    console.log('[DEBUG] Total recommendations to save:', allRecommendations.length);
 
     let savedCount = 0;
 
