@@ -4,7 +4,7 @@
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/hulryung/stock-wizard)
 
-**Live Demo**: [https://stock-wizard-eta.vercel.app](https://stock-wizard-eta.vercel.app)
+**Live Demo**: [https://stockwiz.huconn.com](https://stockwiz.huconn.com)
 
 ![Stock Wizard Main](docs/screenshot-main.png)
 
