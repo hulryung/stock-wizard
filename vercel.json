@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/cron/daily-analysis",
-      "schedule": "0 * * * *"
+      "schedule": "0 21 * * *"
     },
     {
       "path": "/api/cron/track-performance",
