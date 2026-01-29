@@ -225,3 +225,15 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Disclaimer
 
 본 서비스는 투자 권유가 아닌 정보 제공 목적입니다. 투자 결정은 본인의 판단과 책임 하에 이루어져야 합니다. 과거 성과가 미래 수익을 보장하지 않습니다.
+
+---
+
+<div align="center">
+
+Made with :heart: by **[HUCONN](https://huconn.com)**
+
+[![Email](https://img.shields.io/badge/Email-hulryung%40gmail.com-blue?style=flat-square&logo=gmail)](mailto:hulryung@gmail.com)
+[![X](https://img.shields.io/badge/X-@hulryung-black?style=flat-square&logo=x)](https://x.com/hulryung)
+[![GitHub](https://img.shields.io/badge/GitHub-hulryung-181717?style=flat-square&logo=github)](https://github.com/hulryung/stock-wizard)
+
+</div>
