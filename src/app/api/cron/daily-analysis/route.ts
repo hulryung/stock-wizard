@@ -52,20 +52,32 @@ export async function GET(request: NextRequest) {
     console.log('[DEBUG] Total recommendations to save:', allRecommendations.length);
 
     let savedCount = 0;
+    let skippedCount = 0;
 
     for (const rec of allRecommendations) {
-      const price = await getStockPrice(rec.stockSymbol, rec.market);
+      const quote = await getStockPrice(rec.stockSymbol, rec.market);
+
+      // Skip if we can't verify the stock exists
+      if (!quote || !quote.price) {
+        console.log(`[DEBUG] Skipping invalid stock: ${rec.stockSymbol} (${rec.stockName})`);
+        skippedCount++;
+        continue;
+      }
+
+      // Use the actual stock name from API, not AI's hallucinated name
+      const actualStockName = quote.name || rec.stockName;
+
       const saved = await saveRecommendation({
         analysis_date: today,
         market: rec.market,
         stock_symbol: rec.stockSymbol,
-        stock_name: rec.stockName,
+        stock_name: actualStockName,
         news_headline: rec.newsHeadline,
         news_source: null,
         reasoning_chain: rec.reasoningChain,
         connection_summary: rec.connectionSummary,
         confidence_score: rec.confidenceScore,
-        price_at_recommendation: price?.price ?? null,
+        price_at_recommendation: quote.price,
         news_market_impact: rec.newsValue?.market_impact,
         news_unexpectedness: rec.newsValue?.unexpectedness,
         news_contrarian_potential: rec.newsValue?.contrarian_potential,
@@ -78,6 +90,8 @@ export async function GET(request: NextRequest) {
         savedCount++;
       }
     }
+
+    console.log(`[DEBUG] Saved: ${savedCount}, Skipped (invalid): ${skippedCount}`);
 
     return NextResponse.json({ 
       success: true, 
