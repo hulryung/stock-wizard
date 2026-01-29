@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchMarketNews, fetchKoreanNews } from '@/lib/services/news';
 import { analyzeNewsForStocks } from '@/lib/services/analysis';
 import { getStockPrice } from '@/lib/services/stocks';
-import { saveRecommendation, checkAnalysisExists } from '@/lib/services/recommendations';
+import { saveRecommendation } from '@/lib/services/recommendations';
 import { getTodayKST } from '@/lib/utils/date';
 
 export const dynamic = 'force-dynamic';
@@ -15,9 +15,6 @@ export async function GET(request: NextRequest) {
   }
 
   const today = getTodayKST();
-  if (await checkAnalysisExists(today)) {
-    return NextResponse.json({ message: 'Already analyzed today' });
-  }
 
   try {
     console.log('[DEBUG] Starting news fetch...');
