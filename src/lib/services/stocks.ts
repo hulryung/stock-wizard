@@ -76,7 +76,7 @@ export async function getStockPrice(
 }
 
 /**
- * Fetch US stock price from Finnhub
+ * Fetch US stock price from Finnhub, fallback to Yahoo Finance for name
  */
 async function fetchUSStockPrice(symbol: string): Promise<StockQuote | null> {
   const apiKey = process.env.FINNHUB_API_KEY
@@ -105,11 +105,26 @@ async function fetchUSStockPrice(symbol: string): Promise<StockQuote | null> {
       return null
     }
 
-    const stockInfo = US_STOCKS.find((s) => s.symbol === symbol)
+    let stockName = US_STOCKS.find((s) => s.symbol === symbol)?.name
+
+    // If not in our list, try to get name from Finnhub profile
+    if (!stockName) {
+      try {
+        const profileRes = await fetch(
+          `https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`
+        )
+        if (profileRes.ok) {
+          const profile = await profileRes.json()
+          stockName = profile.name || symbol
+        }
+      } catch {
+        stockName = symbol
+      }
+    }
 
     return {
       symbol,
-      name: stockInfo?.name || symbol,
+      name: stockName || symbol,
       price: data.c,
       change: data.d || 0,
       changePercent: data.dp || 0,
@@ -123,52 +138,54 @@ async function fetchUSStockPrice(symbol: string): Promise<StockQuote | null> {
 
 /**
  * Fetch Korean stock price from Yahoo Finance
+ * Tries KOSPI (.KS) first, then KOSDAQ (.KQ)
  */
 async function fetchKRStockPrice(symbol: string): Promise<StockQuote | null> {
-  try {
-    // Convert Korean stock code to Yahoo Finance format
-    // KOSPI: {6자리코드}.KS
-    // KOSDAQ: {6자리코드}.KQ
-    const yahooSymbol = `${symbol}.KS`
+  const suffixes = ['.KS', '.KQ']
 
-    const response = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d`,
-      { next: { revalidate: 60 } }
-    )
+  for (const suffix of suffixes) {
+    try {
+      const yahooSymbol = `${symbol}${suffix}`
 
-    if (!response.ok) {
-      console.error(`Yahoo Finance API error: ${response.status}`)
-      return null
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d`,
+        { next: { revalidate: 60 } }
+      )
+
+      if (!response.ok) {
+        continue
+      }
+
+      const data = await response.json()
+
+      const result = data.chart?.result?.[0]
+      if (!result || !result.meta || !result.meta.regularMarketPrice) {
+        continue
+      }
+
+      const meta = result.meta
+      const currentPrice = meta.regularMarketPrice
+      const previousClose = meta.previousClose || currentPrice
+      const change = currentPrice - previousClose
+      const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
+
+      const stockInfo = KR_STOCKS.find((s) => s.symbol === symbol)
+
+      return {
+        symbol,
+        name: stockInfo?.name || meta.shortName || meta.longName || symbol,
+        price: currentPrice,
+        change,
+        changePercent,
+        market: 'KR',
+      }
+    } catch (error) {
+      continue
     }
-
-    const data = await response.json()
-
-    const result = data.chart?.result?.[0]
-    if (!result || !result.meta) {
-      console.error(`No price data for ${symbol}`)
-      return null
-    }
-
-    const meta = result.meta
-    const currentPrice = meta.regularMarketPrice || 0
-    const previousClose = meta.previousClose || currentPrice
-    const change = currentPrice - previousClose
-    const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
-
-    const stockInfo = KR_STOCKS.find((s) => s.symbol === symbol)
-
-    return {
-      symbol,
-      name: stockInfo?.name || symbol,
-      price: currentPrice,
-      change,
-      changePercent,
-      market: 'KR',
-    }
-  } catch (error) {
-    console.error(`Yahoo Finance fetch error for ${symbol}:`, error)
-    return null
   }
+
+  console.error(`No price data found for KR stock: ${symbol}`)
+  return null
 }
 
 /**

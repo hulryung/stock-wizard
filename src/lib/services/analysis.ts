@@ -147,10 +147,16 @@ const FEW_SHOT_PROMPT = `다음 예시처럼 4단계 이상의 역발상 추천�
         { "step": 4, "reasoning": "...", "connection": "..." }
       ],
       "connectionSummary": "...",
-      "confidenceScore": 0.0
+      "confidenceScore": 0.65
     }
   ]
-}`;
+}
+
+중요:
+- confidenceScore는 추론 논리의 강도에 따라 0.5~0.85 범위로 설정
+- US 주식은 NASDAQ/NYSE 티커 심볼 사용 (예: AAPL, MSFT, NVDA)
+- KR 주식은 6자리 종목코드 사용 (예: 005930, 000660, 035720)
+- 실제로 존재하는 상장 종목만 추천`;
 
 function buildUserPrompt(
   newsItems: { headline: string; summary?: string }[],
