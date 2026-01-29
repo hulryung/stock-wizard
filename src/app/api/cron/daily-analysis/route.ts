@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { format } from 'date-fns';
 import { fetchMarketNews, fetchKoreanNews } from '@/lib/services/news';
 import { analyzeNewsForStocks } from '@/lib/services/analysis';
 import { getStockPrice } from '@/lib/services/stocks';
 import { saveRecommendation, checkAnalysisExists } from '@/lib/services/recommendations';
+import { getTodayKST } from '@/lib/utils/date';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today = getTodayKST();
   if (await checkAnalysisExists(today)) {
     return NextResponse.json({ message: 'Already analyzed today' });
   }

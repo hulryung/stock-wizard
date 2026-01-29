@@ -1,9 +1,9 @@
 import { getSupabase } from '@/lib/supabase';
 import type { Recommendation, RecommendationWithPerformance, Market } from '@/types/database';
-import { format } from 'date-fns';
+import { getTodayKST } from '@/lib/utils/date';
 
 export async function getTodayRecommendations(market?: Market): Promise<Recommendation[]> {
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today = getTodayKST();
   
   let query = getSupabase()
     .from('recommendations')
