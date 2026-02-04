@@ -525,53 +525,54 @@ async function fetchUSStockPrice(symbol: string, stockName: string): Promise<Sto
 }
 
 /**
- * Fetch Korean stock price from Yahoo Finance
- * Tries KOSPI (.KS) first, then KOSDAQ (.KQ)
+ * Fetch Korean stock price from Naver Finance API
  */
 async function fetchKRStockPrice(symbol: string, stockName: string): Promise<StockQuote | null> {
-  const suffixes = ['.KS', '.KQ']
-
-  for (const suffix of suffixes) {
-    try {
-      const yahooSymbol = `${symbol}${suffix}`
-
-      const response = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d`,
-        { next: { revalidate: 60 } }
-      )
-
-      if (!response.ok) {
-        continue
+  try {
+    const response = await fetch(
+      `https://m.stock.naver.com/api/stock/${symbol}/basic`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; StockWizard/1.0)',
+        },
+        next: { revalidate: 60 },
       }
+    )
 
-      const data = await response.json()
-
-      const result = data.chart?.result?.[0]
-      if (!result || !result.meta || !result.meta.regularMarketPrice) {
-        continue
-      }
-
-      const meta = result.meta
-      const currentPrice = meta.regularMarketPrice
-      const previousClose = meta.previousClose || currentPrice
-      const change = currentPrice - previousClose
-      const changePercent = previousClose > 0 ? (change / previousClose) * 100 : 0
-
-      return {
-        symbol,
-        name: stockName, // Always use our reference name, not Yahoo's
-        price: currentPrice,
-        change,
-        changePercent,
-        market: 'KR',
-      }
-    } catch {
-      continue
+    if (!response.ok) {
+      console.error(`Naver API error for ${symbol}: ${response.status}`)
+      return null
     }
-  }
 
-  console.error(`No price data found for KR stock: ${symbol}`)
-  return null
+    const data = await response.json()
+
+    if (!data.closePrice) {
+      console.error(`No price data from Naver for ${symbol}`)
+      return null
+    }
+
+    // Parse price (remove commas)
+    const price = parseFloat(data.closePrice.replace(/,/g, ''))
+    const change = parseFloat((data.compareToPreviousClosePrice || '0').replace(/,/g, ''))
+    const changePercent = parseFloat(data.fluctuationsRatio || '0')
+
+    // Handle sign based on compareToPreviousPrice.code (5 = falling)
+    const isFalling = data.compareToPreviousPrice?.code === '5'
+    const signedChange = isFalling ? -Math.abs(change) : Math.abs(change)
+    const signedChangePercent = isFalling ? -Math.abs(changePercent) : Math.abs(changePercent)
+
+    return {
+      symbol,
+      name: stockName,
+      price,
+      change: signedChange,
+      changePercent: signedChangePercent,
+      market: 'KR',
+    }
+  } catch (error) {
+    console.error(`Naver fetch error for ${symbol}:`, error)
+    return null
+  }
 }
 
 /**
