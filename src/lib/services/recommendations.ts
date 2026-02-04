@@ -1,14 +1,18 @@
 import { getSupabase } from '@/lib/supabase';
-import type { Recommendation, RecommendationWithPerformance, Market } from '@/types/database';
+import type { Recommendation, RecommendationWithPerformance, Market, RecommendationType } from '@/types/database';
 import { getTodayKST } from '@/lib/utils/date';
 
-export async function getTodayRecommendations(market?: Market): Promise<Recommendation[]> {
+export async function getTodayRecommendations(
+  market?: Market,
+  recommendationType: RecommendationType = 'standard'
+): Promise<Recommendation[]> {
   const today = getTodayKST();
-  
+
   let query = getSupabase()
     .from('recommendations')
     .select('*')
     .eq('analysis_date', today)
+    .eq('recommendation_type', recommendationType)
     .order('created_at', { ascending: false });
 
   if (market) {
@@ -23,6 +27,10 @@ export async function getTodayRecommendations(market?: Market): Promise<Recommen
   }
 
   return data || [];
+}
+
+export async function getTodayHiddenGems(): Promise<Recommendation[]> {
+  return getTodayRecommendations(undefined, 'hidden_gem');
 }
 
 export async function getRecommendationsWithPerformance(

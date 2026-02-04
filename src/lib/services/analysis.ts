@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getOpenAI } from '@/lib/openai';
 import { CONTRARIAN_SYSTEM_PROMPT } from '@/lib/prompts/contrarian';
+import { HIDDEN_GEM_SYSTEM_PROMPT, HIDDEN_GEM_FEW_SHOT_PROMPT } from '@/lib/prompts/hidden-gem';
 import { evaluateNewsValue, EvaluatedNews } from './newsEvaluation';
 import { NewsValue } from '@/types/database';
 
@@ -20,8 +21,24 @@ const RecommendationSchema = z.object({
   confidenceScore: z.number().min(0).max(1),
 });
 
+const HiddenGemRecommendationSchema = z.object({
+  stockSymbol: z.string(),
+  stockName: z.string(),
+  market: z.literal('KR'),
+  newsHeadline: z.string(),
+  reasoningChain: z.array(ReasoningStepSchema),
+  connectionSummary: z.string(),
+  confidenceScore: z.number().min(0).max(1),
+  riskLevel: z.enum(['high', 'medium']).optional(),
+  riskFactors: z.array(z.string()).optional(),
+});
+
 const AnalysisOutputSchema = z.object({
   recommendations: z.array(RecommendationSchema),
+});
+
+const HiddenGemOutputSchema = z.object({
+  recommendations: z.array(HiddenGemRecommendationSchema),
 });
 
 export interface RecommendationWithNewsValue {
@@ -35,8 +52,25 @@ export interface RecommendationWithNewsValue {
   newsValue?: NewsValue;
 }
 
+export interface HiddenGemRecommendation {
+  stockSymbol: string;
+  stockName: string;
+  market: 'KR';
+  newsHeadline: string;
+  reasoningChain: { step: number; reasoning: string; connection: string }[];
+  connectionSummary: string;
+  confidenceScore: number;
+  riskLevel?: 'high' | 'medium';
+  riskFactors?: string[];
+  newsValue?: NewsValue;
+}
+
 export interface AnalysisOutput {
   recommendations: RecommendationWithNewsValue[];
+}
+
+export interface HiddenGemOutput {
+  recommendations: HiddenGemRecommendation[];
 }
 
 const MAX_RECOMMENDATIONS = 5;
@@ -274,6 +308,122 @@ export async function analyzeNewsForStocks(
     return { recommendations: recommendationsWithValue };
   } catch (error) {
     console.error('Error analyzing news for stocks:', error);
+    return { recommendations: [] };
+  }
+}
+
+const MAX_HIDDEN_GEMS = 5;
+
+function buildHiddenGemUserPrompt(
+  newsItems: { headline: string; summary?: string }[]
+): string {
+  const formattedNews = newsItems
+    .map((item, index) => {
+      const summary = item.summary ? ` 요약: ${item.summary}` : '';
+      return `${index + 1}. ${item.headline}${summary}`;
+    })
+    .join('\n');
+
+  return `${HIDDEN_GEM_FEW_SHOT_PROMPT}
+
+이제 실제 뉴스를 분석하여 다크호스 종목을 찾으세요.
+뉴스 목록:
+${formattedNews}
+
+요구사항:
+- recommendations는 정확히 ${MAX_HIDDEN_GEMS}개
+- 대형 우량주(시총 상위 50)는 절대 추천하지 않음
+- KOSPI/KOSDAQ 중소형주만 추천
+- reasoningChain에 반드시 3단계 추론 작성
+- riskLevel과 riskFactors를 반드시 포함
+- market은 반드시 "KR" 사용
+- JSON만 반환`;
+}
+
+export async function analyzeNewsForHiddenGems(
+  newsItems: { headline: string; summary?: string }[],
+  options?: AnalysisOptions
+): Promise<HiddenGemOutput> {
+  if (newsItems.length === 0) {
+    return { recommendations: [] };
+  }
+
+  const topN = options?.topN ?? DEFAULT_TOP_N;
+
+  // Stage 1: Evaluate news value
+  let newsValueMap: Map<string, NewsValue> = new Map();
+
+  if (!options?.skipEvaluation) {
+    console.log(`[HiddenGem] Stage 1: Evaluating ${newsItems.length} news items...`);
+    const evaluatedNews = await evaluateNewsValue(newsItems);
+
+    evaluatedNews.sort((a, b) => b.value.overall_score - a.value.overall_score);
+    const topNews = evaluatedNews.slice(0, topN);
+
+    console.log(`[HiddenGem] Filtered top ${topNews.length} news`);
+
+    for (const news of evaluatedNews) {
+      newsValueMap.set(news.headline, news.value);
+    }
+
+    newsItems = topNews.map(n => ({ headline: n.headline, summary: n.summary }));
+  }
+
+  // Stage 2: Hidden gem analysis
+  console.log(`[HiddenGem] Stage 2: Finding hidden gems from ${newsItems.length} news items...`);
+  const userPrompt = buildHiddenGemUserPrompt(newsItems);
+
+  try {
+    const response = await getOpenAI().chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.8,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: HIDDEN_GEM_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content;
+
+    if (!content) {
+      console.error('OpenAI response missing content for hidden gems');
+      return { recommendations: [] };
+    }
+
+    const parsed = JSON.parse(content);
+    const validation = HiddenGemOutputSchema.safeParse(parsed);
+
+    if (!validation.success) {
+      console.error('Invalid hidden gem output:', validation.error);
+      return { recommendations: [] };
+    }
+
+    const recommendationsWithValue: HiddenGemRecommendation[] =
+      validation.data.recommendations.slice(0, MAX_HIDDEN_GEMS).map(rec => {
+        let matchedValue = newsValueMap.get(rec.newsHeadline);
+
+        if (!matchedValue) {
+          for (const [headline, value] of newsValueMap.entries()) {
+            if (rec.newsHeadline.includes(headline.slice(0, 30)) ||
+                headline.includes(rec.newsHeadline.slice(0, 30))) {
+              matchedValue = value;
+              break;
+            }
+          }
+        }
+
+        return {
+          ...rec,
+          newsValue: matchedValue,
+          riskLevel: rec.riskLevel || 'high',
+          riskFactors: rec.riskFactors || ['중소형주 특유의 높은 변동성']
+        };
+      });
+
+    return { recommendations: recommendationsWithValue };
+  } catch (error) {
+    console.error('Error analyzing news for hidden gems:', error);
     return { recommendations: [] };
   }
 }

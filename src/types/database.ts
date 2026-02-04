@@ -1,4 +1,5 @@
 export type Market = 'KR' | 'US';
+export type RecommendationType = 'standard' | 'hidden_gem';
 
 export interface ReasoningStep {
   step: number;
@@ -20,6 +21,7 @@ export interface Recommendation {
   created_at: string;
   analysis_date: string;
   market: Market;
+  recommendation_type: RecommendationType;
   stock_symbol: string;
   stock_name: string;
   news_headline: string;

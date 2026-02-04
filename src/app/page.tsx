@@ -1,7 +1,7 @@
 import { unstable_noStore as noStore } from 'next/cache';
 import { Container, Badge } from '@/components';
 import { RecommendationCard } from '@/components/recommendations';
-import { getTodayRecommendations } from '@/lib/services/recommendations';
+import { getTodayRecommendations, getTodayHiddenGems } from '@/lib/services/recommendations';
 import type { Market } from '@/types/database';
 
 interface PageProps {
@@ -14,11 +14,14 @@ export const fetchCache = 'force-no-store';
 
 export default async function HomePage({ searchParams }: PageProps) {
   noStore();
-  
+
   const params = await searchParams;
   const marketFilter = params.market as Market | undefined;
-  
-  const recommendations = await getTodayRecommendations(marketFilter);
+
+  const [recommendations, hiddenGems] = await Promise.all([
+    getTodayRecommendations(marketFilter),
+    getTodayHiddenGems()
+  ]);
 
   return (
     <Container>
@@ -45,13 +48,38 @@ export default async function HomePage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section className="space-y-4 mb-12">
         {recommendations.length > 0 ? (
           recommendations.map((rec) => (
             <RecommendationCard key={rec.id} recommendation={rec} />
           ))
         ) : (
           <EmptyState />
+        )}
+      </section>
+
+      {/* Hidden Gem Section */}
+      <section className="mb-8">
+        <div className="flex items-center gap-3 mb-2">
+          <h2 className="text-2xl font-bold text-gray-900">
+            다크호스 발굴
+          </h2>
+          <span className="px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-800 rounded-full">
+            HIGH RISK
+          </span>
+        </div>
+        <p className="text-gray-600 text-sm">
+          뉴스와 연관된 KOSPI/KOSDAQ 중소형 숨겨진 수혜주. 높은 변동성과 리스크가 있습니다.
+        </p>
+      </section>
+
+      <section className="space-y-4">
+        {hiddenGems.length > 0 ? (
+          hiddenGems.map((rec) => (
+            <RecommendationCard key={rec.id} recommendation={rec} isHiddenGem />
+          ))
+        ) : (
+          <HiddenGemEmptyState />
         )}
       </section>
     </Container>
@@ -107,6 +135,34 @@ function EmptyState() {
       </p>
       <p className="text-sm text-gray-400">
         AI가 뉴스를 분석하여 숨겨진 투자 기회를 찾고 있습니다.
+      </p>
+    </div>
+  );
+}
+
+function HiddenGemEmptyState() {
+  return (
+    <div className="text-center py-12 bg-amber-50 rounded-xl border border-amber-200">
+      <div className="mx-auto w-14 h-14 mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+        <svg
+          className="w-7 h-7 text-amber-600"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M13 10V3L4 14h7v7l9-11h-7z"
+          />
+        </svg>
+      </div>
+      <h3 className="text-lg font-medium text-gray-900 mb-2">
+        오늘의 다크호스가 아직 없습니다
+      </h3>
+      <p className="text-gray-500 text-sm">
+        중소형 숨겨진 수혜주를 분석 중입니다.
       </p>
     </div>
   );

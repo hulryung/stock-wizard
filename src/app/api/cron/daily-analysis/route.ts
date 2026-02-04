@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchMarketNews, fetchKoreanNewsAggregated, type NewsItem } from '@/lib/services/news'
-import { analyzeNewsForStocks } from '@/lib/services/analysis'
+import { analyzeNewsForStocks, analyzeNewsForHiddenGems } from '@/lib/services/analysis'
 import { getStockPrice } from '@/lib/services/stocks'
 import { saveRecommendation } from '@/lib/services/recommendations'
 import { getTodayKST } from '@/lib/utils/date'
 import { deduplicateNews } from '@/lib/utils/deduplication'
 import { ScrapeLogger, saveNewsItems } from '@/lib/services/scrapeLogger'
+import type { RecommendationType } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -61,7 +62,9 @@ export async function GET(request: NextRequest) {
     )
 
     console.log('[DEBUG] Starting analysis...')
-    const [usAnalysis, krAnalysis] = await Promise.all([
+
+    // Run standard analysis and hidden gem analysis in parallel
+    const [usAnalysis, krAnalysis, hiddenGemAnalysis] = await Promise.all([
       analyzeNewsForStocks(
         usNews.slice(0, 10).map((news) => ({
           headline: news.headline,
@@ -75,33 +78,58 @@ export async function GET(request: NextRequest) {
           summary: news.summary
         })),
         'KR'
+      ),
+      analyzeNewsForHiddenGems(
+        krNews.slice(0, 15).map((news) => ({
+          headline: news.headline,
+          summary: news.summary
+        }))
       )
     ])
+
     console.log('[DEBUG] US Analysis:', usAnalysis.recommendations.length)
     console.log('[DEBUG] KR Analysis:', krAnalysis.recommendations.length)
-
-    const allRecommendations = [...usAnalysis.recommendations, ...krAnalysis.recommendations]
-    console.log('[DEBUG] Total recommendations to save:', allRecommendations.length)
+    console.log('[DEBUG] Hidden Gem Analysis:', hiddenGemAnalysis.recommendations.length)
 
     let savedCount = 0
+    let hiddenGemSavedCount = 0
     let skippedCount = 0
 
-    for (const rec of allRecommendations) {
+    // Helper function to save recommendations
+    async function saveRec(
+      rec: {
+        stockSymbol: string
+        stockName: string
+        market: 'KR' | 'US'
+        newsHeadline: string
+        reasoningChain: { step: number; reasoning: string; connection: string }[]
+        connectionSummary: string
+        confidenceScore: number
+        newsValue?: {
+          market_impact: number
+          unexpectedness: number
+          contrarian_potential: number
+          overall_score: number
+          value_label: 'hot' | 'notable' | 'normal'
+          evaluation_reason: string
+        }
+      },
+      recommendationType: RecommendationType
+    ): Promise<boolean> {
       const quote = await getStockPrice(rec.stockSymbol, rec.market)
 
-      // Skip if we can't verify the stock exists
       if (!quote || !quote.price) {
         console.log(`[DEBUG] Skipping invalid stock: ${rec.stockSymbol} (${rec.stockName})`)
         skippedCount++
-        continue
+        return false
       }
 
-      // Use the actual stock name from API, not AI's hallucinated name
       const actualStockName = quote.name || rec.stockName
 
       const saved = await saveRecommendation({
         analysis_date: today,
         market: rec.market,
+        recommendation_type: recommendationType,
         stock_symbol: rec.stockSymbol,
         stock_name: actualStockName,
         news_headline: rec.newsHeadline,
@@ -118,12 +146,29 @@ export async function GET(request: NextRequest) {
         news_evaluation_reason: rec.newsValue?.evaluation_reason
       })
 
-      if (saved) {
+      return !!saved
+    }
+
+    // Save standard recommendations
+    const allStandardRecs = [...usAnalysis.recommendations, ...krAnalysis.recommendations]
+    console.log('[DEBUG] Total standard recommendations to save:', allStandardRecs.length)
+
+    for (const rec of allStandardRecs) {
+      if (await saveRec(rec, 'standard')) {
         savedCount++
       }
     }
 
-    console.log(`[DEBUG] Saved: ${savedCount}, Skipped (invalid): ${skippedCount}`)
+    // Save hidden gem recommendations
+    console.log('[DEBUG] Hidden gem recommendations to save:', hiddenGemAnalysis.recommendations.length)
+
+    for (const rec of hiddenGemAnalysis.recommendations) {
+      if (await saveRec(rec, 'hidden_gem')) {
+        hiddenGemSavedCount++
+      }
+    }
+
+    console.log(`[DEBUG] Standard saved: ${savedCount}, Hidden gems saved: ${hiddenGemSavedCount}, Skipped: ${skippedCount}`)
 
     // Save news items to database
     const usItemsStored = await saveNewsItems(usNews.slice(0, 20), 'finnhub', today)
@@ -140,7 +185,7 @@ export async function GET(request: NextRequest) {
       ...summary,
       totalItemsStored: usItemsStored + krItemsStored,
       analysisRan: true,
-      recommendationsGenerated: savedCount
+      recommendationsGenerated: savedCount + hiddenGemSavedCount
     })
 
     console.log('[DEBUG] Scrape logs saved')
@@ -148,6 +193,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       count: savedCount,
+      hiddenGemCount: hiddenGemSavedCount,
       executionId: logger.getExecutionId(),
       debug: {
         usNewsCount: usNews.length,
@@ -156,7 +202,8 @@ export async function GET(request: NextRequest) {
         duplicatesRemoved: deduplicationResult.duplicateCount,
         usRecommendations: usAnalysis.recommendations.length,
         krRecommendations: krAnalysis.recommendations.length,
-        totalToSave: allRecommendations.length,
+        hiddenGemRecommendations: hiddenGemAnalysis.recommendations.length,
+        totalToSave: allStandardRecs.length + hiddenGemAnalysis.recommendations.length,
         itemsStored: usItemsStored + krItemsStored,
         sourceResults: Object.fromEntries(krResult.sourceResults)
       }
@@ -164,7 +211,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Daily analysis error:', error)
 
-    // Still try to save logs on error
     try {
       const summary = logger.getSummary()
       await logger.saveLogs({
