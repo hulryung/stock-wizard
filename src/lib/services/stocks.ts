@@ -64,7 +64,7 @@ const US_STOCKS: Record<string, string> = {
   'ASML': 'ASML Holding N.V.',
 }
 
-// Major Korean stocks - must match the prompt reference list
+// Major Korean stocks (Blue chips) - must match the prompt reference list
 const KR_STOCKS: Record<string, string> = {
   '005930': '삼성전자',
   '000660': 'SK하이닉스',
@@ -100,7 +100,7 @@ const KR_STOCKS: Record<string, string> = {
   '010950': 'S-Oil',
   '267250': 'HD현대',
   '329180': 'HD현대중공업',
-  '042660': '대우조선해양',
+  '042660': '한화오션',
   '009540': 'HD한국조선해양',
   '011070': 'LG이노텍',
   '030200': 'KT',
@@ -122,6 +122,86 @@ const KR_STOCKS: Record<string, string> = {
   '102110': 'TIGER 200',
 }
 
+// Small/Mid cap Korean stocks for hidden gems (다크호스)
+const KR_SMALL_MID_STOCKS: Record<string, string> = {
+  // 2차전지/소재
+  '247540': '에코프로비엠',
+  '066970': '엘앤에프',
+  '278280': '천보',
+  '086520': '에코프로',
+  '003670': '포스코퓨처엠',
+
+  // 반도체/장비
+  '042700': '한미반도체',
+  '039030': '이오테크닉스',
+  '058470': '리노공업',
+  '036930': '주성엔지니어링',
+  '140860': '파크시스템스',
+  '357780': '솔브레인',
+  '131970': '테스나',
+  '095340': 'ISC',
+  '322310': '오로스테크놀로지',
+  '067310': '하나마이크론',
+  '108320': 'LX세미콘',
+  '025560': '미래산업',
+  '950130': '엑세스바이오',
+
+  // 로봇/자동화
+  '090360': '로보스타',
+  '056080': '유진로봇',
+  '277810': '레인보우로보틱스',
+  '298040': '효성중공업',
+  '064350': '현대로템',
+
+  // 바이오/헬스케어
+  '145720': '덴티움',
+  '214150': '클래시스',
+  '328130': '루닛',
+  '196170': '알테오젠',
+  '091990': '셀트리온헬스케어',
+  '068760': '셀트리온제약',
+  '950160': '코오롱티슈진',
+  '086900': '메디톡스',
+  '108860': '셀바스AI',
+  '950210': '프레스티지바이오파마',
+
+  // IT/소프트웨어/엔터
+  '053800': '안랩',
+  '035900': 'JYP Ent.',
+  '122870': 'YG Ent.',
+  '041510': 'SM',
+  '293490': '카카오게임즈',
+  '112040': '위메이드',
+  '078340': '컴투스',
+
+  // 신재생/환경/소재
+  '336260': '두산퓨얼셀',
+  '281820': '케이씨텍',
+  '009830': '한화솔루션',
+  '140910': '에이블씨엔씨',
+
+  // 방산/우주/항공
+  '012450': '한화에어로스페이스',
+  '047810': '한국항공우주',
+  '103140': '풍산',
+  '299660': '앤시스테크놀로지',
+
+  // 조선/해양
+  '010620': 'HD현대미포',
+  '071970': 'STX중공업',
+
+  // 건설/인프라
+  '028050': '삼성엔지니어링',
+  '375500': 'DL이앤씨',
+  '047040': '대우건설',
+  '000720': '현대건설',
+
+  // 유통/소비재
+  '069960': '현대백화점',
+  '004170': '신세계',
+  '139480': '이마트',
+}
+
 const CACHE_TTL = 900 // 15 minutes
 
 /**
@@ -131,7 +211,7 @@ export function isValidStock(symbol: string, market: 'KR' | 'US'): boolean {
   if (market === 'US') {
     return symbol in US_STOCKS
   }
-  return symbol in KR_STOCKS
+  return symbol in KR_STOCKS || symbol in KR_SMALL_MID_STOCKS
 }
 
 /**
@@ -141,7 +221,22 @@ export function getStockName(symbol: string, market: 'KR' | 'US'): string | null
   if (market === 'US') {
     return US_STOCKS[symbol] || null
   }
-  return KR_STOCKS[symbol] || null
+  return KR_STOCKS[symbol] || KR_SMALL_MID_STOCKS[symbol] || null
+}
+
+/**
+ * Get small/mid cap stocks list for hidden gems
+ */
+export function getSmallMidCapStocks(): { symbol: string; name: string }[] {
+  return Object.entries(KR_SMALL_MID_STOCKS).map(([symbol, name]) => ({ symbol, name }))
+}
+
+/**
+ * Get all Korean stocks (blue chips + small/mid caps)
+ */
+export function getAllKRStocks(): { symbol: string; name: string }[] {
+  const allStocks = { ...KR_STOCKS, ...KR_SMALL_MID_STOCKS }
+  return Object.entries(allStocks).map(([symbol, name]) => ({ symbol, name }))
 }
 
 /**
