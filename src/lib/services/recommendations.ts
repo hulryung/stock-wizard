@@ -38,9 +38,10 @@ export async function getRecommendationsWithPerformance(
     limit?: number;
     offset?: number;
     market?: Market;
+    recommendationType?: RecommendationType;
   } = {}
 ): Promise<{ data: RecommendationWithPerformance[]; count: number }> {
-  const { limit = 20, offset = 0, market } = options;
+  const { limit = 20, offset = 0, market, recommendationType } = options;
 
   let query = getSupabase()
     .from('recommendations')
@@ -50,6 +51,10 @@ export async function getRecommendationsWithPerformance(
 
   if (market) {
     query = query.eq('market', market);
+  }
+
+  if (recommendationType) {
+    query = query.eq('recommendation_type', recommendationType);
   }
 
   const { data, error, count } = await query;
