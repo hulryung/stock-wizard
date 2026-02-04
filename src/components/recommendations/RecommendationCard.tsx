@@ -21,15 +21,18 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps) 
         <div className="flex items-center gap-2">
           <Badge market={recommendation.market} />
           {recommendation.news_value_label && (
-            <NewsValueBadge 
-              label={recommendation.news_value_label} 
+            <NewsValueBadge
+              label={recommendation.news_value_label}
               score={recommendation.news_overall_score}
             />
           )}
         </div>
-        {confidencePercent && (
-          <span className="text-sm text-gray-500">신뢰도 {confidencePercent}%</span>
-        )}
+        <div className="flex items-center gap-3 text-sm text-gray-500">
+          <span>{recommendation.analysis_date}</span>
+          {confidencePercent && (
+            <span>신뢰도 {confidencePercent}%</span>
+          )}
+        </div>
       </div>
 
       <h3 className="text-lg font-semibold text-gray-900 mb-1">
