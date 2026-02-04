@@ -1,10 +1,11 @@
 import { unstable_noStore as noStore } from 'next/cache';
+import { Suspense } from 'react';
 import { Container, Badge, Card } from '@/components';
 import { getRecommendationsWithPerformance } from '@/lib/services/recommendations';
-import { getStockPrice } from '@/lib/services/stocks';
 import type { Market, RecommendationWithPerformance, RecommendationType } from '@/types/database';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { CurrentPriceDisplay } from './CurrentPriceDisplay';
 
 interface PageProps {
   searchParams: Promise<{ page?: string; market?: string; type?: string }>;
@@ -30,17 +31,6 @@ export default async function HistoryPage({ searchParams }: PageProps) {
     market: marketFilter,
     recommendationType: typeFilter,
   });
-
-  // Fetch current prices for all recommendations
-  const recommendationsWithCurrentPrice = await Promise.all(
-    recommendations.map(async (rec) => {
-      const currentPrice = await getStockPrice(rec.stock_symbol, rec.market);
-      return {
-        ...rec,
-        currentPrice: currentPrice?.price || null,
-      };
-    })
-  );
 
   const totalPages = Math.ceil(count / ITEMS_PER_PAGE);
 
@@ -105,13 +95,9 @@ export default async function HistoryPage({ searchParams }: PageProps) {
       </section>
 
       <section className="space-y-4">
-        {recommendationsWithCurrentPrice.length > 0 ? (
-          recommendationsWithCurrentPrice.map((rec) => (
-            <HistoryCard
-              key={rec.id}
-              recommendation={rec}
-              currentPrice={rec.currentPrice}
-            />
+        {recommendations.length > 0 ? (
+          recommendations.map((rec) => (
+            <HistoryCard key={rec.id} recommendation={rec} />
           ))
         ) : (
           <EmptyHistory typeFilter={typeFilter} />
@@ -159,12 +145,7 @@ function FilterLink({
   );
 }
 
-interface HistoryCardProps {
-  recommendation: RecommendationWithPerformance;
-  currentPrice: number | null;
-}
-
-function HistoryCard({ recommendation, currentPrice }: HistoryCardProps) {
+function HistoryCard({ recommendation }: { recommendation: RecommendationWithPerformance }) {
   const perf7d = recommendation.performance_tracking?.find(p => p.days_since_recommendation === 7);
   const perf30d = recommendation.performance_tracking?.find(p => p.days_since_recommendation === 30);
 
@@ -173,11 +154,6 @@ function HistoryCard({ recommendation, currentPrice }: HistoryCardProps) {
   const formatDate = (dateStr: string) => {
     return format(new Date(dateStr), 'M월 d일 (EEE)', { locale: ko });
   };
-
-  // Calculate total return from recommendation price to current price
-  const totalReturn = recommendation.price_at_recommendation && currentPrice
-    ? ((currentPrice - recommendation.price_at_recommendation) / recommendation.price_at_recommendation) * 100
-    : null;
 
   const currencySymbol = recommendation.market === 'KR' ? '₩' : '$';
 
@@ -196,9 +172,13 @@ function HistoryCard({ recommendation, currentPrice }: HistoryCardProps) {
         <div className="flex gap-3">
           <PerformanceBadge label="7일" value={perf7d?.price_change_percent} />
           <PerformanceBadge label="30일" value={perf30d?.price_change_percent} />
-          {totalReturn !== null && (
-            <PerformanceBadge label="현재" value={totalReturn} highlight />
-          )}
+          <Suspense fallback={<PerformanceBadgeSkeleton />}>
+            <CurrentPriceDisplay
+              symbol={recommendation.stock_symbol}
+              market={recommendation.market}
+              recommendationPrice={recommendation.price_at_recommendation}
+            />
+          </Suspense>
         </div>
       </div>
 
@@ -218,18 +198,6 @@ function HistoryCard({ recommendation, currentPrice }: HistoryCardProps) {
             {recommendation.price_at_recommendation?.toLocaleString() || '-'}
           </span>
         </div>
-
-        {currentPrice && (
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400">현재가:</span>
-            <span className={`font-medium ${
-              totalReturn && totalReturn > 0 ? 'text-green-600' :
-              totalReturn && totalReturn < 0 ? 'text-red-600' : 'text-gray-700'
-            }`}>
-              {currencySymbol}{currentPrice.toLocaleString()}
-            </span>
-          </div>
-        )}
 
         {recommendation.confidence_score && (
           <span className="text-gray-500 ml-auto">
@@ -274,6 +242,15 @@ function PerformanceBadge({
       <p className={`text-sm font-medium ${colorClass}`}>
         {isPositive ? '+' : ''}{value.toFixed(1)}%
       </p>
+    </div>
+  );
+}
+
+function PerformanceBadgeSkeleton() {
+  return (
+    <div className="text-center min-w-[50px] px-2 py-1 rounded bg-gray-100 animate-pulse">
+      <p className="text-xs text-gray-400">현재</p>
+      <div className="h-4 w-10 bg-gray-200 rounded mx-auto mt-1" />
     </div>
   );
 }
