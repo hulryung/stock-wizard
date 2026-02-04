@@ -1,4 +1,7 @@
 import { getRedis } from '../redis'
+import { withRetry } from '../utils/retry'
+import { parseRssFeed } from '../utils/xmlParser'
+import { KR_NEWS_SOURCES, buildGoogleNewsUrl, type NewsSource } from '../config/newsSources'
 
 export interface NewsItem {
   id: string
@@ -9,6 +12,13 @@ export interface NewsItem {
   publishedAt: Date
   category: string
 }
+
+export interface AggregatedNewsResult {
+  items: NewsItem[]
+  sourceResults: Map<string, { success: boolean; count: number; error?: string }>
+}
+
+const FETCH_TIMEOUT_MS = 10000
 
 /**
  * Fetch US market news from Finnhub API
@@ -38,37 +48,48 @@ export async function fetchMarketNews(
     }
 
     const url = `https://finnhub.io/api/v1/news?category=${category}&token=${apiKey}`
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Stock-Wizard/1.0'
+
+    const newsItems = await withRetry(
+      async () => {
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Stock-Wizard/1.0'
+          },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        })
+
+        if (!response.ok) {
+          throw new Error(`Finnhub API error: ${response.status} ${response.statusText}`)
+        }
+
+        const data = (await response.json()) as Array<{
+          id: number
+          headline: string
+          summary: string
+          source: string
+          url: string
+          datetime: number
+          image: string
+          category: string
+        }>
+
+        return data.map((item) => ({
+          id: `finnhub-${item.id}`,
+          headline: item.headline,
+          summary: item.summary,
+          source: item.source,
+          url: item.url,
+          publishedAt: new Date(item.datetime * 1000),
+          category: item.category || category
+        }))
+      },
+      {
+        maxRetries: 3,
+        onRetry: (error, attempt) => {
+          console.warn(`Finnhub fetch retry ${attempt}:`, error.message)
+        }
       }
-    })
-
-    if (!response.ok) {
-      console.error(`Finnhub API error: ${response.status} ${response.statusText}`)
-      return []
-    }
-
-    const data = await response.json() as Array<{
-      id: number
-      headline: string
-      summary: string
-      source: string
-      url: string
-      datetime: number
-      image: string
-      category: string
-    }>
-
-    const newsItems: NewsItem[] = data.map((item) => ({
-      id: `finnhub-${item.id}`,
-      headline: item.headline,
-      summary: item.summary,
-      source: item.source,
-      url: item.url,
-      publishedAt: new Date(item.datetime * 1000),
-      category: item.category || category
-    }))
+    )
 
     // Cache for 1 hour
     try {
@@ -85,7 +106,7 @@ export async function fetchMarketNews(
 }
 
 /**
- * Fetch Korean news from Google News RSS
+ * Fetch Korean news from Google News RSS (legacy single-source function)
  * @param query - Search query for Korean news
  * @returns Array of news items
  */
@@ -103,21 +124,18 @@ export async function fetchKoreanNews(query: string): Promise<NewsItem[]> {
   }
 
   try {
-    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=ko&gl=KR&ceid=KR:ko`
-
-    const response = await fetch(rssUrl, {
-      headers: {
-        'User-Agent': 'Stock-Wizard/1.0'
-      }
-    })
-
-    if (!response.ok) {
-      console.error(`Google News RSS error: ${response.status} ${response.statusText}`)
-      return []
-    }
-
-    const rssText = await response.text()
-    const newsItems = parseGoogleNewsRss(rssText)
+    const rssUrl = buildGoogleNewsUrl(query)
+    const newsItems = await fetchFromRssSource(
+      {
+        id: 'google-news-kr',
+        name: 'Google News Korea',
+        type: 'rss',
+        url: rssUrl,
+        priority: 5,
+        enabled: true
+      },
+      'korean'
+    )
 
     // Cache for 1 hour
     try {
@@ -134,76 +152,140 @@ export async function fetchKoreanNews(query: string): Promise<NewsItem[]> {
 }
 
 /**
- * Parse Google News RSS XML response
- * @param rssText - Raw RSS XML text
- * @returns Array of parsed news items
+ * Fetch Korean news from all configured sources in parallel
+ * @param query - Search query for Google News
+ * @returns Aggregated news items from all sources
  */
-function parseGoogleNewsRss(rssText: string): NewsItem[] {
-  const newsItems: NewsItem[] = []
-  let itemIndex = 0
+export async function fetchKoreanNewsAggregated(query: string): Promise<AggregatedNewsResult> {
+  const cacheKey = `news:kr-aggregated:${encodeURIComponent(query)}:${new Date().toISOString().split('T')[0]}`
 
-  // Simple regex-based RSS parsing
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g
-  let itemMatch
-
-  while ((itemMatch = itemRegex.exec(rssText)) !== null) {
-    const itemContent = itemMatch[1]
-
-    // Extract title
-    const titleMatch = /<title>([\s\S]*?)<\/title>/.exec(itemContent)
-    const headline = titleMatch ? decodeHtmlEntities(titleMatch[1]) : 'Untitled'
-
-    // Extract description/summary
-    const descriptionMatch = /<description>([\s\S]*?)<\/description>/.exec(itemContent)
-    let summary = descriptionMatch ? decodeHtmlEntities(descriptionMatch[1]) : undefined
-
-    // Remove HTML tags from summary
-    if (summary) {
-      summary = summary.replace(/<[^>]*>/g, '').trim()
+  try {
+    // Try to get from cache first
+    const cached = await getRedis().get(cacheKey)
+    if (cached) {
+      const parsed = JSON.parse(cached as string) as {
+        items: Array<NewsItem & { publishedAt: string }>
+        sourceResults: [string, { success: boolean; count: number; error?: string }][]
+      }
+      return {
+        items: parsed.items.map((item) => ({
+          ...item,
+          publishedAt: new Date(item.publishedAt)
+        })),
+        sourceResults: new Map(parsed.sourceResults)
+      }
     }
-
-    // Extract link
-    const linkMatch = /<link>([\s\S]*?)<\/link>/.exec(itemContent)
-    const url = linkMatch ? linkMatch[1].trim() : ''
-
-    // Extract publication date
-    const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(itemContent)
-    const publishedAt = pubDateMatch ? new Date(pubDateMatch[1]) : new Date()
-
-    // Extract source from description (Google News includes source info)
-    const sourceMatch = /^(.*?)\s*-\s*/.exec(summary || '')
-    const source = sourceMatch ? sourceMatch[1].trim() : 'Google News'
-
-    newsItems.push({
-      id: `google-news-${itemIndex}`,
-      headline,
-      summary: summary?.substring(0, 200),
-      source,
-      url,
-      publishedAt,
-      category: 'korean'
-    })
-
-    itemIndex++
+  } catch (error) {
+    console.error('Redis cache read error:', error)
   }
 
-  return newsItems
+  const sourceResults = new Map<string, { success: boolean; count: number; error?: string }>()
+  const allItems: NewsItem[] = []
+
+  // Build source list with Google News URL
+  const sources: NewsSource[] = KR_NEWS_SOURCES.map((source) => {
+    if (source.id === 'google-news-kr') {
+      return { ...source, url: buildGoogleNewsUrl(query) }
+    }
+    return source
+  }).filter((source) => source.enabled && source.url)
+
+  // Fetch from all sources in parallel
+  const fetchPromises = sources.map(async (source) => {
+    try {
+      const items = await fetchFromRssSource(source, 'korean')
+      sourceResults.set(source.id, { success: true, count: items.length })
+      return items
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      sourceResults.set(source.id, { success: false, count: 0, error: errorMsg })
+      console.error(`Failed to fetch from ${source.name}:`, errorMsg)
+      return []
+    }
+  })
+
+  const results = await Promise.all(fetchPromises)
+  for (const items of results) {
+    allItems.push(...items)
+  }
+
+  // Sort by publication date (newest first)
+  allItems.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+
+  const result = { items: allItems, sourceResults }
+
+  // Cache for 1 hour
+  try {
+    const cacheData = {
+      items: allItems,
+      sourceResults: Array.from(sourceResults.entries())
+    }
+    await getRedis().setex(cacheKey, 3600, JSON.stringify(cacheData))
+  } catch (error) {
+    console.error('Redis cache write error:', error)
+  }
+
+  return result
 }
 
 /**
- * Decode HTML entities in text
- * @param text - Text with HTML entities
- * @returns Decoded text
+ * Fetch news from a single RSS source with retry logic
+ * @param source - News source configuration
+ * @param category - Category to assign to items
+ * @returns Array of news items
  */
-function decodeHtmlEntities(text: string): string {
-  const entities: Record<string, string> = {
-    '&amp;': '&',
-    '&lt;': '<',
-    '&gt;': '>',
-    '&quot;': '"',
-    '&#39;': "'",
-    '&apos;': "'"
+export async function fetchFromRssSource(
+  source: NewsSource,
+  category: string
+): Promise<NewsItem[]> {
+  if (!source.url) {
+    throw new Error(`No URL configured for source: ${source.id}`)
   }
 
-  return text.replace(/&[a-zA-Z]+;/g, (match) => entities[match] || match)
+  return withRetry(
+    async () => {
+      const response = await fetch(source.url!, {
+        headers: {
+          'User-Agent': 'Stock-Wizard/1.0',
+          Accept: 'application/rss+xml, application/xml, text/xml, application/atom+xml'
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      })
+
+      if (!response.ok) {
+        throw new Error(`RSS fetch error: ${response.status} ${response.statusText}`)
+      }
+
+      const rssText = await response.text()
+      const parsed = parseRssFeed(rssText)
+
+      return parsed.items.map((item, index) => {
+        // Extract source from description if available (Google News pattern)
+        let itemSource = item.source || source.name
+        if (!item.source && item.description) {
+          const sourceMatch = /^(.*?)\s*-\s*/.exec(item.description)
+          if (sourceMatch) {
+            itemSource = sourceMatch[1].trim()
+          }
+        }
+
+        return {
+          id: `${source.id}-${index}`,
+          headline: item.title,
+          summary: item.description?.substring(0, 200),
+          source: itemSource,
+          url: item.link || '',
+          publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+          category
+        }
+      })
+    },
+    {
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      onRetry: (error, attempt) => {
+        console.warn(`RSS fetch retry ${attempt} for ${source.name}:`, error.message)
+      }
+    }
+  )
 }

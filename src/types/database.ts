@@ -59,3 +59,53 @@ export interface PerformanceTracking {
 export interface RecommendationWithPerformance extends Recommendation {
   performance_tracking?: PerformanceTracking[];
 }
+
+// News scraping log types
+export interface NewsScrapeLog {
+  id: string;
+  created_at: string;
+  execution_id: string;
+  source_id: string;
+  source_name: string;
+  market: Market;
+  status: 'success' | 'partial' | 'failed';
+  items_fetched: number;
+  items_after_dedup: number;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  error_type: string | null;
+  error_message: string | null;
+  retry_count: number;
+}
+
+export interface StoredNewsItem {
+  id: string;
+  created_at: string;
+  external_id: string;
+  source_id: string;
+  headline: string;
+  summary: string | null;
+  url: string | null;
+  published_at: string | null;
+  content_hash: string;
+  is_duplicate: boolean;
+  duplicate_of_id: string | null;
+  was_analyzed: boolean;
+  analysis_date: string | null;
+}
+
+export interface ScrapeExecutionSummary {
+  id: string;
+  execution_id: string;
+  created_at: string;
+  total_sources: number;
+  successful_sources: number;
+  failed_sources: number;
+  total_items_fetched: number;
+  total_items_after_dedup: number;
+  total_items_stored: number;
+  total_duration_ms: number | null;
+  analysis_ran: boolean;
+  recommendations_generated: number;
+}

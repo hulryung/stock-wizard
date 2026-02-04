@@ -1,31 +1,66 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { fetchMarketNews, fetchKoreanNews } from '@/lib/services/news';
-import { analyzeNewsForStocks } from '@/lib/services/analysis';
-import { getStockPrice } from '@/lib/services/stocks';
-import { saveRecommendation } from '@/lib/services/recommendations';
-import { getTodayKST } from '@/lib/utils/date';
+import { NextRequest, NextResponse } from 'next/server'
+import { fetchMarketNews, fetchKoreanNewsAggregated, type NewsItem } from '@/lib/services/news'
+import { analyzeNewsForStocks } from '@/lib/services/analysis'
+import { getStockPrice } from '@/lib/services/stocks'
+import { saveRecommendation } from '@/lib/services/recommendations'
+import { getTodayKST } from '@/lib/utils/date'
+import { deduplicateNews } from '@/lib/utils/deduplication'
+import { ScrapeLogger, saveNewsItems } from '@/lib/services/scrapeLogger'
 
-export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const dynamic = 'force-dynamic'
+export const maxDuration = 120
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
+  const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const today = getTodayKST();
+  const today = getTodayKST()
+  const logger = new ScrapeLogger()
 
   try {
-    console.log('[DEBUG] Starting news fetch...');
-    const [usNews, krNews] = await Promise.all([
-      fetchMarketNews('general'),
-      fetchKoreanNews('경제 산업 기업 뉴스')
-    ]);
-    console.log('[DEBUG] US News count:', usNews.length);
-    console.log('[DEBUG] KR News count:', krNews.length);
+    console.log('[DEBUG] Starting news fetch...')
+    console.log('[DEBUG] Execution ID:', logger.getExecutionId())
 
-    console.log('[DEBUG] Starting analysis...');
+    // Fetch US news
+    const usTracker = logger.createSourceTracker('finnhub', 'Finnhub', 'US')
+    let usNews: NewsItem[] = []
+    try {
+      usNews = await fetchMarketNews('general')
+      usTracker.complete(usNews, usNews.length)
+    } catch (error) {
+      usTracker.fail(error instanceof Error ? error : new Error(String(error)), 'fetch_error')
+    }
+    console.log('[DEBUG] US News count:', usNews.length)
+
+    // Fetch Korean news from all sources
+    const krResult = await fetchKoreanNewsAggregated('경제 산업 기업 뉴스')
+    console.log('[DEBUG] KR News raw count:', krResult.items.length)
+
+    // Log each source result
+    for (const [sourceId, result] of krResult.sourceResults) {
+      const tracker = logger.createSourceTracker(sourceId, sourceId, 'KR')
+      if (result.success) {
+        tracker.complete(
+          krResult.items.filter((item) => item.id.startsWith(sourceId)),
+          result.count
+        )
+      } else {
+        tracker.fail(new Error(result.error || 'Unknown error'), 'fetch_error')
+      }
+    }
+
+    // Deduplicate Korean news
+    const deduplicationResult = deduplicateNews(krResult.items)
+    const krNews = deduplicationResult.uniqueItems
+    console.log(
+      '[DEBUG] KR News after dedup:',
+      krNews.length,
+      `(removed ${deduplicationResult.duplicateCount} duplicates)`
+    )
+
+    console.log('[DEBUG] Starting analysis...')
     const [usAnalysis, krAnalysis] = await Promise.all([
       analyzeNewsForStocks(
         usNews.slice(0, 10).map((news) => ({
@@ -41,31 +76,28 @@ export async function GET(request: NextRequest) {
         })),
         'KR'
       )
-    ]);
-    console.log('[DEBUG] US Analysis:', usAnalysis.recommendations.length);
-    console.log('[DEBUG] KR Analysis:', krAnalysis.recommendations.length);
+    ])
+    console.log('[DEBUG] US Analysis:', usAnalysis.recommendations.length)
+    console.log('[DEBUG] KR Analysis:', krAnalysis.recommendations.length)
 
-    const allRecommendations = [
-      ...usAnalysis.recommendations,
-      ...krAnalysis.recommendations
-    ];
-    console.log('[DEBUG] Total recommendations to save:', allRecommendations.length);
+    const allRecommendations = [...usAnalysis.recommendations, ...krAnalysis.recommendations]
+    console.log('[DEBUG] Total recommendations to save:', allRecommendations.length)
 
-    let savedCount = 0;
-    let skippedCount = 0;
+    let savedCount = 0
+    let skippedCount = 0
 
     for (const rec of allRecommendations) {
-      const quote = await getStockPrice(rec.stockSymbol, rec.market);
+      const quote = await getStockPrice(rec.stockSymbol, rec.market)
 
       // Skip if we can't verify the stock exists
       if (!quote || !quote.price) {
-        console.log(`[DEBUG] Skipping invalid stock: ${rec.stockSymbol} (${rec.stockName})`);
-        skippedCount++;
-        continue;
+        console.log(`[DEBUG] Skipping invalid stock: ${rec.stockSymbol} (${rec.stockName})`)
+        skippedCount++
+        continue
       }
 
       // Use the actual stock name from API, not AI's hallucinated name
-      const actualStockName = quote.name || rec.stockName;
+      const actualStockName = quote.name || rec.stockName
 
       const saved = await saveRecommendation({
         analysis_date: today,
@@ -83,29 +115,68 @@ export async function GET(request: NextRequest) {
         news_contrarian_potential: rec.newsValue?.contrarian_potential,
         news_overall_score: rec.newsValue?.overall_score,
         news_value_label: rec.newsValue?.value_label,
-        news_evaluation_reason: rec.newsValue?.evaluation_reason,
-      });
+        news_evaluation_reason: rec.newsValue?.evaluation_reason
+      })
 
       if (saved) {
-        savedCount++;
+        savedCount++
       }
     }
 
-    console.log(`[DEBUG] Saved: ${savedCount}, Skipped (invalid): ${skippedCount}`);
+    console.log(`[DEBUG] Saved: ${savedCount}, Skipped (invalid): ${skippedCount}`)
 
-    return NextResponse.json({ 
-      success: true, 
+    // Save news items to database
+    const usItemsStored = await saveNewsItems(usNews.slice(0, 20), 'finnhub', today)
+    const krItemsStored = await saveNewsItems(
+      krNews.slice(0, 20),
+      'kr-aggregated',
+      today,
+      deduplicationResult.clusters
+    )
+
+    // Save scrape logs
+    const summary = logger.getSummary()
+    await logger.saveLogs({
+      ...summary,
+      totalItemsStored: usItemsStored + krItemsStored,
+      analysisRan: true,
+      recommendationsGenerated: savedCount
+    })
+
+    console.log('[DEBUG] Scrape logs saved')
+
+    return NextResponse.json({
+      success: true,
       count: savedCount,
+      executionId: logger.getExecutionId(),
       debug: {
         usNewsCount: usNews.length,
-        krNewsCount: krNews.length,
+        krNewsRawCount: krResult.items.length,
+        krNewsAfterDedup: krNews.length,
+        duplicatesRemoved: deduplicationResult.duplicateCount,
         usRecommendations: usAnalysis.recommendations.length,
         krRecommendations: krAnalysis.recommendations.length,
-        totalToSave: allRecommendations.length
+        totalToSave: allRecommendations.length,
+        itemsStored: usItemsStored + krItemsStored,
+        sourceResults: Object.fromEntries(krResult.sourceResults)
       }
-    });
+    })
   } catch (error) {
-    console.error('Daily analysis error:', error);
-    return NextResponse.json({ error: 'Analysis failed' }, { status: 500 });
+    console.error('Daily analysis error:', error)
+
+    // Still try to save logs on error
+    try {
+      const summary = logger.getSummary()
+      await logger.saveLogs({
+        ...summary,
+        totalItemsStored: 0,
+        analysisRan: false,
+        recommendationsGenerated: 0
+      })
+    } catch (logError) {
+      console.error('Failed to save error logs:', logError)
+    }
+
+    return NextResponse.json({ error: 'Analysis failed' }, { status: 500 })
   }
 }
